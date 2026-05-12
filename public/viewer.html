@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Viewer</title>
+</head>
+
+<body>
+  <h1>VIEWER</h1>
+
+  <video id="video" autoplay playsinline></video>
+
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    const socket = io();
+    const roomId = "test-room";
+
+    const video = document.getElementById("video");
+
+    const peer = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" }
+      ]
+    });
+
+    let remoteDescSet = false;
+    const iceQueue = [];
+
+    socket.emit("join-room", roomId);
+
+    socket.on("signal", async (data) => {
+
+      const signal = data.signal;
+      if (!signal) return;
+
+      // 📥 OFFER
+      if (signal.type === "offer") {
+        console.log("OFFER RECIBIDA");
+
+        await peer.setRemoteDescription(signal);
+        remoteDescSet = true;
+
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+
+        socket.emit("signal", {
+          roomId,
+          signal: peer.localDescription
+        });
+
+        // flush ICE
+        iceQueue.forEach(c => peer.addIceCandidate(c));
+        iceQueue.length = 0;
+      }
+
+      // ❄️ CANDIDATES
+      if (signal.type === "candidate") {
+        try {
+          if (remoteDescSet) {
+            await peer.addIceCandidate(signal.candidate);
+          } else {
+            iceQueue.push(signal.candidate);
+          }
+        } catch (e) {}
+      }
+    });
+
+    peer.ontrack = (event) => {
+      console.log("STREAM OK");
+      video.srcObject = event.streams[0];
+    };
+  </script>
+</body>
+</html>
