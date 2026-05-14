@@ -7,7 +7,13 @@
 <body>
   <h1>VIEWER</h1>
 
-  <video id="video" autoplay playsinline></video>
+ <video
+  id="video"
+  autoplay
+  playsinline
+  controls
+  style="width:100%;max-width:700px;"
+></video>
 
   <script src="/socket.io/socket.io.js"></script>
 
@@ -19,7 +25,14 @@
 
     const peer = new RTCPeerConnection({
       iceServers: [
-        { urls: "stun:stun.l.google.com:19302" }
+        {
+          urls: "stun:stun.l.google.com:19302"
+        },
+        {
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        }
       ]
     });
 
@@ -28,19 +41,28 @@
 
     socket.emit("join-room", roomId);
 
+    console.log("VIEWER READY");
+
+    // 📥 recibir señales
     socket.on("signal", async (data) => {
 
       const signal = data.signal;
+
       if (!signal) return;
+
+      console.log("SIGNAL:", signal.type);
 
       // 📥 OFFER
       if (signal.type === "offer") {
-        console.log("OFFER RECIBIDA");
+
+        console.log("📥 OFFER RECIBIDA");
 
         await peer.setRemoteDescription(signal);
+
         remoteDescSet = true;
 
         const answer = await peer.createAnswer();
+
         await peer.setLocalDescription(answer);
 
         socket.emit("signal", {
@@ -48,27 +70,65 @@
           signal: peer.localDescription
         });
 
-        // flush ICE
-        iceQueue.forEach(c => peer.addIceCandidate(c));
-        iceQueue.length = 0;
+        // flush candidates
+        while (iceQueue.length) {
+          const candidate = iceQueue.shift();
+          await peer.addIceCandidate(candidate);
+        }
       }
 
-      // ❄️ CANDIDATES
+      // ❄️ ICE
       if (signal.type === "candidate") {
+
         try {
+
           if (remoteDescSet) {
             await peer.addIceCandidate(signal.candidate);
           } else {
             iceQueue.push(signal.candidate);
           }
-        } catch (e) {}
+
+        } catch (err) {
+          console.log("ICE ERROR:", err);
+        }
       }
+
+      // 🟢 ANSWER
+      if (signal.type === "answer") {
+        console.log("ANSWER IGNORADA EN VIEWER");
+      }
+
     });
 
+    // ❄️ ENVIAR ICE CANDIDATES
+    peer.onicecandidate = (event) => {
+
+      if (event.candidate) {
+
+        console.log("📡 ENVIANDO ICE");
+
+        socket.emit("signal", {
+          roomId,
+          signal: {
+            type: "candidate",
+            candidate: event.candidate
+          }
+        });
+      }
+    };
+
+    // 🎥 recibir stream
     peer.ontrack = (event) => {
-      console.log("STREAM OK");
+
+      console.log("🎥 STREAM RECIBIDO");
+
       video.srcObject = event.streams[0];
     };
+
+    peer.onconnectionstatechange = () => {
+      console.log("STATE:", peer.connectionState);
+    };
+
   </script>
 </body>
 </html>

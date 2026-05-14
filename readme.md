@@ -37,7 +37,7 @@ npm install
 
 # ESTADO DEL PROYECTO #
 
-Aplicación funcional sujeta a mejoras y actualizaciones de front y backend
+Aplicación basica funcional sujeta a mejoras y actualizaciones de front y backend
 
 
 
